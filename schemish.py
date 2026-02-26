@@ -7,7 +7,7 @@
 ## slow if you do things like redefine + and *, which are commented out in ls.scm but defined in
 ## the book. It also handles comments, has a nicer repl and can load files (see below). Tokenization
 ## is more robust, and it supports multiple expressions in a body. I have left everything else as is,
-## and have not changed names of variables or functions unless necessary.
+## and have not changed names of variables or functions unless necessary or to clarify.
 ##
 ## The book code can be found at https://github.com/broop/little-schemer/
 ## Note: I've left most of the original comments, except where they became irrelevant or are no
@@ -60,11 +60,11 @@ def read_from_tokens(tokens):
     token = tokens.popleft()
     match token:
         case '(':
-            L = []
+            expressions = []
             while tokens[0] != ')':
-                L.append(read_from_tokens(tokens))
+                expressions.append(read_from_tokens(tokens))
             tokens.popleft()
-            return L
+            return expressions
         case ')':
             raise SyntaxError('unexpected )')
         case "'":  # support the ' shorthand for quoting used in the book
@@ -101,7 +101,7 @@ def standard_env():
         '+': op.add,
         '-': op.sub,
         '*': op.mul,
-        '/': op.truediv,
+        '/': op.floordiv,
         '=': op.eq,
         'modulo': op.mod,
         'car': lambda x: x[0],
@@ -140,19 +140,19 @@ global_env = standard_env()
 
 
 # nicer output
-def lispstr(exp):
+def lispstr(expr):
     """Convert a Python object back into a Lisp-readable string. Added a couple of things... """
-    match exp:
+    match expr:
         case True:
             return '#t'
         case False:
             return '#f'
         case list():
-            return '(' + ' '.join(map(lispstr, exp)) + ')'
+            return '(' + ' '.join(map(lispstr, expr)) + ')'
         case Procedure():
-            return f'#<procedure {exp.parms}>'  #
+            return f'#<procedure {expr.parms}>'  #
         case _:
-            return str(exp)
+            return str(expr)
 
 
 ################ Procedures
@@ -175,24 +175,17 @@ class Procedure:
 
 
 # Generator-based eval
-def _eval(x, env):
-    """
-    Evaluate an expression in an environment.
-
-
-    - yield (expr, env) when it needs to evaluate a sub-expression
-    - Receives the result back via send()
-    - Returns the final value
-    """
-    match x:
+def _eval(expr, env):
+    """Evaluate an expression in an environment using yield/send"""
+    match expr:
         case ('string', s):
             return s
         case str(sym):  # variable reference
             return env.find(sym)[sym]
 
-        # Constant literal (number, bool)
-        case _ if not isinstance(x, list):
-            return x
+        # If it's not a list, it's a literal
+        case _ if not isinstance(expr, list):
+            return expr
 
         case ['quote', val]:
             return val
@@ -242,18 +235,19 @@ def _eval(x, env):
 
 
 def eval(x, env=global_env):
-    generator = _eval(x, env)
-    if not isinstance(generator, types.GeneratorType):
-        return generator
+    maybe_generator = _eval(x, env)
+    if not isinstance(maybe_generator, types.GeneratorType): # our "base case" :)
+        return maybe_generator
 
-    stack = [generator]
-    result = None
+    stack = [maybe_generator] # is generator
+    result = None # prime the generator
 
     while stack:
         try:
             expr, env = stack[-1].send(result)
             stack.append(_eval(expr, env))
-            result = None
+            # print(f'stack: {stack}, expr: {expr}')
+            result = None # prime the next generator
 
         except StopIteration as e:
             stack.pop()
